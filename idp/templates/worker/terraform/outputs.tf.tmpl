@@ -1,0 +1,19 @@
+output "queue_url" {
+  description = "SQS main queue URL — set this as QUEUE_URL env var in the service"
+  value       = aws_sqs_queue.main.url
+}
+
+output "queue_arn" {
+  description = "SQS main queue ARN"
+  value       = aws_sqs_queue.main.arn
+}
+
+output "dlq_url" {
+  description = "Dead-letter queue URL"
+  value       = aws_sqs_queue.dead_letter.url
+}
+
+output "ssm_config_path" {
+  description = "SSM parameter path — contains queue URLs as JSON"
+  value       = aws_ssm_parameter.config.name
+}

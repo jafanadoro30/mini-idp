@@ -1,0 +1,26 @@
+# Traefik static configuration
+
+api:
+  dashboard: true
+  insecure: true   # dashboard on :8081 — for local dev only
+
+ping: {}           # enables GET /ping on api port (:8080) for healthchecks
+
+# Expose Prometheus metrics on the API port (:8080/metrics)
+metrics:
+  prometheus: {}
+
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: idp-traefik
+
+log:
+  level: INFO
+
+accessLog: {}

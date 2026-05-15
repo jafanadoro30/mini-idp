@@ -1,0 +1,83 @@
+groups:
+  - name: sli_alerts
+    interval: 30s
+    rules:
+
+      # ── High Error Rate ────────────────────────────────────────────────────
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > 0.05
+        # Noise suppression: only fire if condition persists for 5+ minutes
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High HTTP error rate on {{ $labels.job }}"
+          description: >
+            Error rate is {{ $value | humanizePercentage }} (threshold: 5%).
+            Service: {{ $labels.job }}.
+          runbook: "https://github.com/your-org/idp/blob/main/docs/runbooks/high-error-rate.md"
+
+      # ── Critical Error Rate ────────────────────────────────────────────────
+      - alert: CriticalErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > 0.25
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical HTTP error rate on {{ $labels.job }}"
+          description: >
+            Error rate is {{ $value | humanizePercentage }} (threshold: 25%).
+            Immediate action required.
+
+      # ── High P99 Latency ──────────────────────────────────────────────────
+      - alert: HighP99Latency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job)
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High p99 latency on {{ $labels.job }}"
+          description: >
+            p99 latency is {{ $value | humanizeDuration }} (threshold: 1s).
+            Service: {{ $labels.job }}.
+
+      # ── Low Throughput (service may be down) ─────────────────────────────
+      - alert: LowThroughput
+        expr: |
+          sum(rate(http_requests_total[5m])) by (job) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Very low throughput on {{ $labels.job }}"
+          description: >
+            Throughput dropped to {{ $value | humanize }} req/s.
+            Service may be down or not receiving traffic.
+
+      # ── Service Down ──────────────────────────────────────────────────────
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }}."

@@ -1,0 +1,39 @@
+# ── Secrets — NEVER commit these ─────────────────────────────────────────────
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+*secret*
+*credentials*
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# ── Terraform ─────────────────────────────────────────────────────────────────
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/terraform.tfstate.*.backup
+**/*.tfplan
+# tfvars can contain secrets — don't commit them
+**/terraform.tfvars
+**/terraform.tfvars.json
+!**/terraform.tfvars.example
+
+# ── Docker / preview envs ─────────────────────────────────────────────────────
+/tmp/preview-envs/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
