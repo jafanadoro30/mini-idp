@@ -1,0 +1,181 @@
+# IDP — Internal Developer Platform
+# Root docker-compose.yml — starts the full stack with: docker compose up -d
+#
+# Services:
+#   Module 2: traefik, webhook-server
+#   Module 3: prometheus, grafana, demo-app (metrics target)
+#   Shared:   localstack (AWS simulation for Module 1 Terraform)
+
+networks:
+  # Traefik uses this to discover preview env containers dynamically
+  idp-traefik:
+    name: idp-traefik
+    driver: bridge
+
+  # Internal network for observability stack
+  idp-monitoring:
+    driver: bridge
+
+  # Internal network for app services
+  idp-internal:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  localstack_data:
+
+# ── MODULE 2: Ephemeral Environment Lifecycle ─────────────────────────────────
+
+services:
+  traefik:
+    image: traefik:v3.1
+    container_name: idp-traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"         # HTTP — preview env routing
+      - "8081:8080"     # Traefik dashboard (http://localhost:8081)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./modules/module2/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+    networks:
+      - idp-traefik
+      - idp-internal
+    labels:
+      - "traefik.enable=false"   # don't route the router itself
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  webhook-server:
+    build:
+      context: ./modules/module2/webhook_server
+      dockerfile: Dockerfile
+    container_name: idp-webhook-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"    # Webhook API & UI
+    environment:
+      - PREVIEW_BASE_PORT=9000
+      - PREVIEW_DOMAIN=localhost
+      - TRAEFIK_NETWORK=idp-traefik
+      - COMPOSE_DIR=/tmp/preview-envs
+    volumes:
+      # Needs Docker socket to spin up/down preview env containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/preview-envs:/tmp/preview-envs
+    networks:
+      - idp-traefik
+      - idp-internal
+    depends_on:
+      traefik:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+# ── MODULE 3: Observability as Code ──────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: idp-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./modules/module3/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./modules/module3/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"        # allows config reload via POST /-/reload
+      - "--web.enable-remote-write-receiver"
+    networks:
+      - idp-monitoring
+      - idp-internal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: idp-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/sli-overview.json
+    volumes:
+      - ./modules/module3/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - idp-monitoring
+      - idp-internal
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Demo app — generates real metrics for Module 3 dashboards
+  demo-app:
+    build:
+      context: ./modules/module3/demo_app
+      dockerfile: Dockerfile
+    container_name: idp-demo-app
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    networks:
+      - idp-monitoring
+      - idp-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.demo-app.rule=Host(`demo.localhost`)"
+      - "traefik.http.services.demo-app.loadbalancer.server.port=8082"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8082/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+# ── SHARED: LocalStack (AWS simulation for Module 1 Terraform) ────────────────
+
+  localstack:
+    image: localstack/localstack:3.8
+    container_name: idp-localstack
+    restart: unless-stopped
+    ports:
+      - "4566:4566"     # Main LocalStack gateway
+    environment:
+      - SERVICES=s3,sqs,ssm
+      - DEBUG=0
+      - PERSISTENCE=1
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:-}
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - idp-internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
