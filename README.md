@@ -48,7 +48,6 @@ A free Groq API key from https://console.groq.com. No credit card required.
 To start the full stack:
 
     git clone repo-url
-    cd idp
     docker compose up -d
     docker compose ps
 
