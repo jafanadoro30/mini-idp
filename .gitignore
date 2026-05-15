@@ -9,6 +9,9 @@ secrets/
 *secret*
 *credentials*
 
+
+video/ 
+
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]

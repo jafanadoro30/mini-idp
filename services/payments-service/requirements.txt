@@ -1,0 +1,2 @@
+# payments-service dependencies
+# Add your own below — stdlib only by default to keep the image lean
